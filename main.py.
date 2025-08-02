@@ -1,0 +1,105 @@
+import discord
+from discord.ext import commands
+from flask import Flask
+import threading
+import json
+import os
+
+# Bot configuration
+TOKEN = "MTM5MzUzMjMzNzgwNzE2MzQxMg.G5MozQ.2JOE4iX2TdxZjDfEStZAsVZkB0_QVXuralUd-Q"
+CHANNEL_ID = 1299443648634814505
+ROLE_NAME = "Pirkėjas"
+DATA_FILE = "data.json"
+
+# Load data from JSON file
+def load_data():
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, 'r') as f:
+            return json.load(f)
+    return {"user_rep": {}, "server_rep": {}}
+
+# Save data to JSON file
+def save_data(data):
+    with open(DATA_FILE, 'w') as f:
+        json.dump(data, f, indent=4)
+
+# Load initial data
+data = load_data()
+
+intents = discord.Intents.default()
+intents.messages = True
+intents.guilds = True
+intents.message_content = True
+intents.members = True
+
+bot = commands.Bot(command_prefix="!", intents=intents)
+
+@bot.event
+async def on_ready():
+    print(f"✅ Botas prisijungė kaip {bot.user}")
+    print("🟢 Botas veikia 24/7 režime")
+
+@bot.event
+async def on_message(message):
+    if message.author.bot:
+        return
+
+    # Only reputation channel
+    if message.channel.id == CHANNEL_ID:
+        # Only users with Pirkėjas role
+        if any(role.name == ROLE_NAME for role in message.author.roles):
+            if message.content.lower() == "+rep":
+                server_id = str(message.guild.id)
+                
+                # Add reputation to server
+                if server_id in data["server_rep"]:
+                    data["server_rep"][server_id] += 1
+                else:
+                    data["server_rep"][server_id] = 1
+                
+                # Save data immediately
+                save_data(data)
+                
+                current_rep = data["server_rep"][server_id]
+                await message.channel.send(f"✅ Serverio reputacija: **{current_rep}**")
+        else:
+            await message.delete()
+
+    await bot.process_commands(message)
+
+# Commands for checking reputation
+@bot.command(name="rep")
+async def check_rep(ctx):
+    server_id = str(ctx.guild.id)
+    current_rep = data["server_rep"].get(server_id, 0)
+    await ctx.send(f"📊 Serverio reputacija: **{current_rep}**")
+
+# Flask server for 24/7 uptime
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return f"🤖 Discord Bot veikia 24/7! Serverių reputacija: {len(data['server_rep'])}"
+
+@app.route('/status')
+def status():
+    return {
+        "status": "online",
+        "servers": len(data['server_rep']),
+        "total_rep": sum(data['server_rep'].values())
+    }
+
+def run_flask():
+    app.run(host='0.0.0.0', port=8080, debug=False, use_reloader=False)
+
+def keep_alive():
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    print("🌐 Flask server started for 24/7 uptime")
+
+# Start Flask server
+keep_alive()
+
+# Run Discord bot
+print("🚀 Starting Discord bot...")
+bot.run(TOKEN)
